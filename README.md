@@ -4,6 +4,8 @@ Desktop helper for **Java (non-HTML5)** server consoles: Fujitsu iRMC AVR, Dell 
 
 It logs into the BMC, fetches a fresh viewer (`.jnlp` or the iLO 3 applet), and launches it so you do not have to click through the web UI every time.
 
+Used ProLiant, iRMC, iDRAC, and SuperMicro boxes still show up in homelabs and technical-school racks. The cheap hardware is fine; the Java console in a modern browser is the part that wastes an afternoon. This helper is for that.
+
 This project is open source under the [MIT License](LICENSE). It is not affiliated with Hewlett Packard, Dell, Fujitsu, Super Micro, or Lenovo.
 
 **This is vibe-coded.** It was written with [Cursor](https://cursor.com) as a pair programmer (yes, the `Cursor` co-author on commits is that). Treat it as a lab helper, not a vendor product. Live testing so far is mainly **HP iLO 3**; other BMC paths are included because those Java consoles still exist, not because every one was proven here. If something is wrong, open an issue or a PR — that is more useful than being angry that an AI helped write it.
