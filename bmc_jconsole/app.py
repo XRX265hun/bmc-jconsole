@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -10,6 +11,15 @@ from bmc_jconsole.connect import connect_host
 from bmc_jconsole.launcher import find_javaws
 from bmc_jconsole.logutil import write_log
 from bmc_jconsole.models import VENDORS, Host
+from bmc_jconsole.paste import (
+    LAYOUT_KEYS,
+    LAYOUT_LABELS,
+    PasteError,
+    clipboard_text,
+    foreground_looks_like_helper,
+    start_paste_hotkey,
+    type_text,
+)
 from bmc_jconsole.store import data_dir, load_state, save_state
 
 ctk.set_appearance_mode("dark")
@@ -24,7 +34,7 @@ class SettingsDialog(ctk.CTkToplevel):
         super().__init__(master)
         self.app = master
         self.title("Settings")
-        self.geometry("560x280")
+        self.geometry("560x420")
         self.resizable(False, False)
         self.transient(master)
         self.grab_set()
@@ -55,16 +65,37 @@ class SettingsDialog(ctk.CTkToplevel):
         self.timeout_var = tk.StringVar(value=str(settings.timeout_sec))
         ctk.CTkEntry(self, textvariable=self.timeout_var, width=80).grid(row=3, column=1, sticky="w", **pad)
 
+        ctk.CTkLabel(self, text="Paste key delay (ms)").grid(row=4, column=0, sticky="w", **pad)
+        self.paste_delay_var = tk.StringVar(value=str(settings.paste_delay_ms))
+        ctk.CTkEntry(self, textvariable=self.paste_delay_var, width=80).grid(row=4, column=1, sticky="w", **pad)
+
+        ctk.CTkLabel(self, text="Paste keyboard").grid(row=5, column=0, sticky="w", **pad)
+        self.paste_layout_menu = ctk.CTkOptionMenu(
+            self,
+            values=list(LAYOUT_LABELS.values()),
+            width=220,
+        )
+        self.paste_layout_menu.set(LAYOUT_LABELS.get(settings.paste_layout, LAYOUT_LABELS["us"]))
+        self.paste_layout_menu.grid(row=5, column=1, sticky="w", **pad)
+
+        self.paste_hotkey_var = tk.BooleanVar(value=settings.paste_hotkey)
+        ctk.CTkCheckBox(
+            self,
+            text="Ctrl+Alt+V types the clipboard into the focused Java console",
+            variable=self.paste_hotkey_var,
+        ).grid(row=6, column=0, columnspan=3, sticky="w", **pad)
+
         hint = (
             "Needs Java 8 with javaws, or OpenWebStart. "
+            "Match paste keyboard to the layout selected inside the Java console. "
             f"Config folder: {data_dir()}"
         )
         ctk.CTkLabel(self, text=hint, wraplength=500, text_color="gray").grid(
-            row=4, column=0, columnspan=3, sticky="w", **pad
+            row=7, column=0, columnspan=3, sticky="w", **pad
         )
 
         btns = ctk.CTkFrame(self, fg_color="transparent")
-        btns.grid(row=5, column=0, columnspan=3, sticky="e", padx=16, pady=16)
+        btns.grid(row=8, column=0, columnspan=3, sticky="e", padx=16, pady=16)
         ctk.CTkButton(btns, text="Detect javaws", command=self._detect).pack(side="left", padx=6)
         ctk.CTkButton(btns, text="Save", command=self._save).pack(side="left", padx=6)
 
@@ -73,7 +104,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def _browse(self) -> None:
         path = filedialog.askopenfilename(
             title="Select javaws",
-            filetypes=[("javaws", "javaws.exe"), ("All files", "*.*")],
+            filetypes=[("javaws", "javaws*"), ("All files", "*.*")],
         )
         if path:
             self.javaws_var.set(path)
@@ -95,7 +126,101 @@ class SettingsDialog(ctk.CTkToplevel):
             settings.timeout_sec = max(5, int(self.timeout_var.get().strip() or "25"))
         except ValueError:
             settings.timeout_sec = 25
+        try:
+            settings.paste_delay_ms = max(1, int(self.paste_delay_var.get().strip() or "20"))
+        except ValueError:
+            settings.paste_delay_ms = 20
+        settings.paste_hotkey = bool(self.paste_hotkey_var.get())
+        settings.paste_layout = LAYOUT_KEYS.get(self.paste_layout_menu.get(), "us")
         self.app.persist()
+        self.app.sync_paste_hotkey()
+        self.destroy()
+
+
+class ConsolePasteDialog(ctk.CTkToplevel):
+    def __init__(self, master: App) -> None:
+        super().__init__(master)
+        self.app = master
+        self.title("Console paste")
+        self.geometry("560x420")
+        self.transient(master)
+        pad = {"padx": 16, "pady": 8}
+
+        ctk.CTkLabel(
+            self,
+            text="Java BMC consoles ignore Ctrl+V. This types keystrokes into the focused console. Set Paste keyboard to the same layout the Java session is using.",
+            wraplength=520,
+        ).pack(anchor="w", **pad)
+
+        layout_row = ctk.CTkFrame(self, fg_color="transparent")
+        layout_row.pack(fill="x", padx=16, pady=(0, 4))
+        ctk.CTkLabel(layout_row, text="Paste keyboard").pack(side="left")
+        self.layout_menu = ctk.CTkOptionMenu(
+            layout_row,
+            values=list(LAYOUT_LABELS.values()),
+            width=220,
+            command=self._layout_changed,
+        )
+        self.layout_menu.set(LAYOUT_LABELS.get(master.app_state.settings.paste_layout, LAYOUT_LABELS["us"]))
+        self.layout_menu.pack(side="left", padx=(8, 0))
+
+        self.body = ctk.CTkTextbox(self, height=200)
+        self.body.pack(fill="both", expand=True, padx=16, pady=4)
+        try:
+            clip = clipboard_text()
+        except PasteError:
+            clip = ""
+        if clip:
+            self.body.insert("1.0", clip)
+
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=8)
+        ctk.CTkButton(row, text="Load clipboard", width=140, command=self._load_clipboard).pack(side="left")
+        ctk.CTkButton(row, text="Type in 3 seconds", width=170, command=self._countdown).pack(side="right")
+        self.status = ctk.CTkLabel(
+            self,
+            text="Click the Java console, then press Type. Or use Ctrl+Alt+V while the console is focused.",
+            text_color="gray",
+            wraplength=520,
+        )
+        self.status.pack(anchor="w", padx=16, pady=(0, 16))
+
+    def _layout_changed(self, label: str) -> None:
+        self.app.app_state.settings.paste_layout = LAYOUT_KEYS.get(label, "us")
+        self.app.persist()
+
+    def _load_clipboard(self) -> None:
+        try:
+            text = clipboard_text()
+        except PasteError as exc:
+            messagebox.showerror("Clipboard", str(exc), parent=self)
+            return
+        self.body.delete("1.0", "end")
+        self.body.insert("1.0", text)
+
+    def _countdown(self, remaining: int = 3) -> None:
+        if remaining <= 0:
+            self.withdraw()
+            self.after(200, self._type_now)
+            return
+        self.status.configure(text=f"Click the Java console window… typing in {remaining}")
+        self.after(1000, lambda: self._countdown(remaining - 1))
+
+    def _type_now(self) -> None:
+        if foreground_looks_like_helper():
+            self.deiconify()
+            self.status.configure(text="The Java console was not focused. Click it, then Type again.")
+            return
+        text = self.body.get("1.0", "end-1c")
+        delay = self.app.app_state.settings.paste_delay_ms
+        layout = LAYOUT_KEYS.get(self.layout_menu.get(), self.app.app_state.settings.paste_layout)
+        try:
+            typed = type_text(text, delay_ms=delay, layout=layout, log=self.app.log)
+        except PasteError as exc:
+            self.deiconify()
+            self.status.configure(text=str(exc))
+            messagebox.showerror("Paste", str(exc), parent=self)
+            return
         self.destroy()
 
 
@@ -108,6 +233,7 @@ class App(ctk.CTk):
         self.app_state = load_state()
         self.selected_id: str | None = None
         self._building = False
+        self._stop_paste_hotkey = None
 
         self._build()
         self.refresh_list()
@@ -115,7 +241,9 @@ class App(ctk.CTk):
             self.select_host(self.app_state.hosts[0].id)
         else:
             self.clear_form()
+        self.sync_paste_hotkey()
         self.log("Ready. Add a BMC host, then Connect. Java consoles need javaws (Java 8 or OpenWebStart).")
+        self.log("Paste: use Console paste, or Ctrl+Alt+V while the Java window is focused.")
 
     def _build(self) -> None:
         top = ctk.CTkFrame(self, fg_color="transparent")
@@ -143,7 +271,7 @@ class App(ctk.CTk):
             selectforeground="#ffffff",
             borderwidth=0,
             highlightthickness=0,
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 11) if os.name == "nt" else ("DejaVu Sans", 11),
         )
         self.listbox.pack(fill="both", expand=True, padx=12, pady=4)
         self.listbox.bind("<<ListboxSelect>>", self._on_list_select)
@@ -196,6 +324,7 @@ class App(ctk.CTk):
         ctk.CTkButton(action, text="Save host", width=120, command=self.save_form).pack(side="left")
         ctk.CTkButton(action, text="Connect", width=140, command=self.connect_selected).pack(side="left", padx=10)
         ctk.CTkButton(action, text="Launch local JNLP", width=160, command=self.launch_local_dialog).pack(side="left")
+        ctk.CTkButton(action, text="Console paste", width=130, command=self.open_paste).pack(side="left", padx=10)
 
         ctk.CTkLabel(right, text="Log").pack(anchor="w", padx=16)
         self.log_box = ctk.CTkTextbox(right, height=180)
@@ -372,6 +501,31 @@ class App(ctk.CTk):
 
     def open_settings(self) -> None:
         SettingsDialog(self)
+
+    def open_paste(self) -> None:
+        ConsolePasteDialog(self)
+
+    def sync_paste_hotkey(self) -> None:
+        if self._stop_paste_hotkey is not None:
+            self._stop_paste_hotkey()
+            self._stop_paste_hotkey = None
+        if not self.app_state.settings.paste_hotkey:
+            return
+        self._stop_paste_hotkey = start_paste_hotkey(lambda: self.after(0, self._hotkey_paste))
+
+    def _hotkey_paste(self) -> None:
+        if foreground_looks_like_helper():
+            return
+        try:
+            text = clipboard_text()
+            type_text(
+                text,
+                delay_ms=self.app_state.settings.paste_delay_ms,
+                layout=self.app_state.settings.paste_layout,
+                log=self.log,
+            )
+        except PasteError as exc:
+            self.log(str(exc))
 
 
 def main() -> None:

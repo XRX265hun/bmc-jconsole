@@ -39,6 +39,46 @@ def _windows_javaws_candidates() -> list[str]:
     return found
 
 
+def _linux_javaws_candidates() -> list[str]:
+    found: list[str] = []
+    which = shutil.which("javaws") or shutil.which("itweb-javaws")
+    if which:
+        found.append(which)
+    for path in (
+        "/usr/share/icedtea-web/bin/javaws",
+        "/usr/lib/icedtea-web/bin/javaws",
+        "/usr/bin/javaws",
+        str(Path.home() / ".local/share/icedtea-web/bin/javaws"),
+    ):
+        if Path(path).is_file():
+            found.append(path)
+    for path in glob.glob(str(Path.home() / ".config/icedtea-web/*/javaws")):
+        found.append(path)
+    for root in ("/opt/OpenWebStart", str(Path.home() / ".local/share/OpenWebStart")):
+        found.extend(glob.glob(str(Path(root) / "javaws")))
+        found.extend(glob.glob(str(Path(root) / "bin/javaws")))
+    return found
+
+
+def _linux_java8_candidates() -> list[Path]:
+    patterns = [
+        "/usr/lib/jvm/java-8-openjdk-*/bin/java",
+        "/usr/lib/jvm/java-8-openjdk/bin/java",
+        "/usr/lib/jvm/java-1.8.*/bin/java",
+        "/usr/lib/jvm/zulu-8*/bin/java",
+        "/usr/lib/jvm/zulu8*/bin/java",
+        "/usr/lib/jvm/temurin-8*/bin/java",
+        "/usr/lib/jvm/adoptopenjdk-8*/bin/java",
+        "/usr/lib/jvm/jdk-8*/bin/java",
+        "/usr/lib/jvm/jre-8*/bin/java",
+        str(Path.home() / ".sdkman/candidates/java/8*/bin/java"),
+    ]
+    found: list[Path] = []
+    for pattern in patterns:
+        found.extend(Path(p) for p in glob.glob(pattern))
+    return found
+
+
 def find_javaws(configured: str = "") -> str:
     if configured:
         path = Path(configured).expanduser()
@@ -65,9 +105,14 @@ def find_javaws(configured: str = "") -> str:
         matches = sorted(_windows_javaws_candidates(), reverse=True)
         if matches:
             return matches[0]
+    else:
+        matches = _linux_javaws_candidates()
+        if matches:
+            return matches[0]
 
     raise LaunchError(
-        "Could not find javaws. Install Java 8 (with Web Start) or OpenWebStart, "
+        "Could not find javaws. Install Java 8 with Web Start (Windows) or "
+        "icedtea-netx / OpenWebStart (Debian: sudo apt install icedtea-netx), "
         "then set the path in Settings."
     )
 
@@ -116,10 +161,16 @@ def find_java8(configured_javaws: str = "") -> str:
         ):
             candidates.extend(Path(p) for p in glob.glob(str(Path(root) / r"Java\jre1.8*\bin\java.exe")))
             candidates.extend(Path(p) for p in glob.glob(str(Path(root) / r"Java\jdk1.8*\bin\java.exe")))
+    else:
+        candidates.extend(_linux_java8_candidates())
     for path in candidates:
         if path.is_file() and _is_java8(path):
             return str(path)
-    raise LaunchError("Could not find Java 8 java.exe (needed for iLO 3 applet).")
+    raise LaunchError(
+        "Could not find Java 8 (needed for iLO 3 applet). "
+        "On Debian 11: sudo apt install openjdk-8-jre. "
+        "On Debian 12+: install Temurin 8, or set JAVA_HOME to a Java 8 JRE."
+    )
 
 
 def launcher_jar() -> Path:

@@ -63,14 +63,25 @@ class Settings:
     verify_tls: bool = False
     timeout_sec: int = 25
     remember_passwords: bool = True
+    paste_delay_ms: int = 20
+    paste_hotkey: bool = True
+    paste_layout: str = "us"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Settings:
+        layout = str(data.get("paste_layout", "us") or "us")
+        from bmc_jconsole.paste import LAYOUT_KLIDS
+
+        if layout not in LAYOUT_KLIDS:
+            layout = "us"
         return cls(
             javaws_path=str(data.get("javaws_path", "")),
             verify_tls=bool(data.get("verify_tls", False)),
             timeout_sec=int(data.get("timeout_sec", 25) or 25),
             remember_passwords=bool(data.get("remember_passwords", True)),
+            paste_delay_ms=int(data.get("paste_delay_ms", 20) or 20),
+            paste_hotkey=bool(data.get("paste_hotkey", True)),
+            paste_layout=layout,
         )
 
     def to_dict(self) -> dict[str, Any]:

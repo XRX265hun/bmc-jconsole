@@ -12,21 +12,38 @@ This project is open source under the [MIT License](LICENSE). It is not affiliat
 
 ## Requirements
 
-- Python 3.10+
-- **Java 8 with Web Start** (`javaws.exe`) or [OpenWebStart](https://openwebstart.com/)
+- Python 3.10+ (on Debian: `python3`, `python3-venv`, `python3-tk`)
+- **Java 8** for iLO 3 applet hosting, plus **Java Web Start** (`javaws` / [IcedTea-Web](https://icedtea.classpath.org/wiki/IcedTea-Web) / [OpenWebStart](https://openwebstart.com/))
 - Network reachability to the BMC (self-signed TLS is accepted by default)
+- Console paste on Linux: `xdotool` + `xclip` (X11) or `wtype` + `wl-clipboard` (Wayland)
 
-Modern Oracle Java 11+ does **not** include Web Start. Use an 8u JRE, or OpenWebStart.
+Modern Oracle Java 11+ does **not** include Web Start. Use an 8u JRE, IcedTea-Web, or OpenWebStart.
 
 Old BMCs (iLO 3, iRMC S2–S4, iDRAC 6, etc.) often only speak **TLS 1.0/1.1** with weak DHE ciphers. This app uses a legacy TLS client for that. iLO 3 Java IRC is an **applet** (`intgapp*.jar`), not a `.jnlp` download — the app hosts that applet after login.
 
 ## Download
 
-Get a zip from **[Releases](https://github.com/XRX265hun/bmc-jconsole/releases)** (Source code). Unzip it, then on Windows double-click `start.bat`.
+Get a zip from **[Releases](https://github.com/XRX265hun/bmc-jconsole/releases)** (Source code) and unzip it.
 
-You still need **Python 3.10+** and **Java 8** (with `javaws`) installed on the machine. The script creates a venv and starts the GUI.
+**Windows:** double-click `start.bat`.
+
+**Debian / Linux:**
+
+```bash
+sudo apt install python3 python3-venv python3-tk python3-pip xdotool xclip
+# Java Web Start:
+sudo apt install icedtea-netx
+# Java 8 (Debian 11). Debian 12+ often needs Temurin 8 from Adoptium.
+sudo apt install openjdk-8-jre || true
+chmod +x start.sh
+./start.sh
+```
+
+You still need **Python 3.10+** and a Java 8 / Web Start stack. The script creates a venv and starts the GUI.
 
 ## Install from git
+
+Windows:
 
 ```powershell
 git clone https://github.com/XRX265hun/bmc-jconsole.git
@@ -37,13 +54,26 @@ pip install -r requirements.txt
 python -m bmc_jconsole
 ```
 
-Or: `python run.py`
+Debian:
+
+```bash
+git clone https://github.com/XRX265hun/bmc-jconsole.git
+cd bmc-jconsole
+sudo apt install python3 python3-venv python3-tk python3-pip icedtea-netx xdotool xclip
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m bmc_jconsole
+```
+
+Or: `python run.py` / `./start.sh`
 
 ## Use
 
 1. **Settings** — point at `javaws` if it is not auto-detected.
 2. **Add** a host — address, username, password, vendor (or Auto-detect).
 3. **Connect** — fetches a session viewer and starts Java.
+4. **Console paste** — Java KVMs ignore Ctrl+V. Use **Console paste** (types after a 3-second countdown) or **Ctrl+Alt+V** while the Java window is focused. Set **Paste keyboard** to the same language the Java console is using (US for most BIOS/Linux, Hungarian if the guest/iLO keyboard is HU).
 
 You can also **Launch local JNLP** if you already downloaded a viewer file from the BMC page. Those files expire quickly; connect from this app when possible so a new one is fetched.
 
