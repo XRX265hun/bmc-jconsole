@@ -20,7 +20,13 @@ Modern Oracle Java 11+ does **not** include Web Start. Use an 8u JRE, or OpenWeb
 
 Old BMCs (iLO 3, iRMC S2–S4, iDRAC 6, etc.) often only speak **TLS 1.0/1.1** with weak DHE ciphers. This app uses a legacy TLS client for that. iLO 3 Java IRC is an **applet** (`intgapp*.jar`), not a `.jnlp` download — the app hosts that applet after login.
 
-## Install
+## Download
+
+Get a zip from **[Releases](https://github.com/XRX265hun/bmc-jconsole/releases)** (Source code). Unzip it, then on Windows double-click `start.bat`.
+
+You still need **Python 3.10+** and **Java 8** (with `javaws`) installed on the machine. The script creates a venv and starts the GUI.
+
+## Install from git
 
 ```powershell
 git clone https://github.com/XRX265hun/bmc-jconsole.git
