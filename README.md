@@ -19,7 +19,7 @@ Old BMCs (iLO 3, iRMC S2–S4, iDRAC 6, etc.) often only speak **TLS 1.0/1.1** w
 ## Install
 
 ```powershell
-git clone https://github.com/<you>/bmc-jconsole.git
+git clone https://github.com/XRX265hun/bmc-jconsole.git
 cd bmc-jconsole
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
